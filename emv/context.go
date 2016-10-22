@@ -98,6 +98,7 @@ func (c *Context) SelectApplication(applicationName []byte) error {
 	}
 
 	fmt.Printf("%+v\n", c.cardInformation)
+	fmt.Printf("%+v\n", c.processingOptions)
 
 	return nil
 }

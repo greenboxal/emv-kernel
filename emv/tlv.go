@@ -1,11 +1,11 @@
 package emv
 
 import (
-	"bytes"
-	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"reflect"
 	"strconv"
+	"strings"
 )
 
 type Tlv map[int][]byte
@@ -68,13 +68,14 @@ func (t Tlv) Unmarshal(obj interface{}) error {
 		field := value.Field(i)
 		fieldDef := typ.Field(i)
 
-		opts, ok := fieldDef.Tag.Lookup("tlv")
+		structTag, ok := fieldDef.Tag.Lookup("tlv")
+		opts := strings.Split(structTag, ",")
 
 		if !ok {
 			continue
 		}
 
-		if opts == "other" {
+		if optsContains(opts, "other") {
 			if field.IsNil() {
 				field.Set(reflect.ValueOf(t))
 			} else {
@@ -85,13 +86,13 @@ func (t Tlv) Unmarshal(obj interface{}) error {
 				}
 			}
 		} else {
-			tag, err := strconv.ParseUint(opts, 16, 64)
+			tag, err := strconv.ParseUint(opts[0], 16, 64)
 
 			if err != nil {
 				return err
 			}
 
-			_, err = t.UnmarshalValue(int(tag), field.Addr().Interface())
+			_, err = t.UnmarshalValueWithOptions(int(tag), field.Addr().Interface(), opts)
 
 			if err != nil {
 				return err
@@ -103,13 +104,16 @@ func (t Tlv) Unmarshal(obj interface{}) error {
 }
 
 func (t Tlv) UnmarshalValue(tag int, value interface{}) (bool, error) {
+	return t.UnmarshalValueWithOptions(tag, value, []string{})
+}
+
+func (t Tlv) UnmarshalValueWithOptions(tag int, value interface{}, options []string) (bool, error) {
 	data, found := t[tag]
 
 	if !found {
 		return false, nil
 	}
 
-	b := bytes.NewBuffer(data)
 	reflectedValue := reflect.ValueOf(value)
 
 	switch reflectedValue.Kind() {
@@ -147,7 +151,7 @@ func (t Tlv) UnmarshalValue(tag int, value interface{}) (bool, error) {
 		case *[]byte:
 			*v = data
 		case *int:
-			result, err := binary.ReadVarint(b)
+			result, err := DecodeInteger(data)
 
 			if err != nil {
 				return true, err
@@ -155,7 +159,7 @@ func (t Tlv) UnmarshalValue(tag int, value interface{}) (bool, error) {
 
 			*v = int(result)
 		case *int64:
-			result, err := binary.ReadVarint(b)
+			result, err := DecodeInteger(data)
 
 			if err != nil {
 				return true, err
@@ -163,7 +167,7 @@ func (t Tlv) UnmarshalValue(tag int, value interface{}) (bool, error) {
 
 			*v = result
 		case *uint64:
-			result, err := binary.ReadUvarint(b)
+			result, err := DecodeUInt(data)
 
 			if err != nil {
 				return true, err
@@ -171,7 +175,7 @@ func (t Tlv) UnmarshalValue(tag int, value interface{}) (bool, error) {
 
 			*v = result
 		case *uint:
-			result, err := binary.ReadUvarint(b)
+			result, err := DecodeUInt(data)
 
 			if err != nil {
 				return true, err
@@ -179,9 +183,13 @@ func (t Tlv) UnmarshalValue(tag int, value interface{}) (bool, error) {
 
 			*v = uint(result)
 		case *string:
-			*v = string(data)
+			if optsContains(options, "hex") {
+				*v = hex.EncodeToString(data)
+			} else {
+				*v = string(data)
+			}
 		case *bool:
-			result, err := binary.ReadUvarint(b)
+			result, err := DecodeUInt(data)
 
 			if err != nil {
 				return true, err
@@ -255,4 +263,13 @@ func DecodeTlv(data []byte) (Tlv, error) {
 	tlv := make(Tlv)
 
 	return tlv, tlv.DecodeTlv(data)
+}
+
+func optsContains(s []string, e string) bool {
+	for _, a := range s {
+		if a == e {
+			return true
+		}
+	}
+	return false
 }
