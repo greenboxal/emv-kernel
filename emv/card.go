@@ -103,12 +103,12 @@ func (e *Card) Select(name []byte, first bool) (*ApduResponse, error) {
 	})
 }
 
-func (e *Card) ReadRecord(sfi, record byte) (*ApduResponse, error) {
+func (e *Card) ReadRecord(sfi, record int) (*ApduResponse, error) {
 	return e.SendApdu(&Apdu{
 		Class:       0x00,
 		Instruction: 0xB2,
-		P1:          record,
-		P2:          (sfi << 3) | 0x4,
+		P1:          byte(record),
+		P2:          (byte(sfi) << 3) | 0x4,
 		Data:        nil,
 		Expected:    0,
 	})

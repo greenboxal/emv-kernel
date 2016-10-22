@@ -10,6 +10,46 @@ import (
 
 type Tlv map[int][]byte
 
+func (tlv Tlv) DecodeTlv(data []byte) error {
+	for i := 0; i < len(data); {
+		tag, tagLength, err := DecodeTag(data[i:])
+
+		if err != nil {
+			return err
+		}
+
+		i += tagLength
+
+		length, lengthLength, err := DecodeLength(data[i:])
+
+		if err != nil {
+			return err
+		}
+
+		i += lengthLength
+
+		value := make([]byte, int(length))
+		copy(value, data[i:i+int(length)])
+		i += int(length)
+
+		tlv[tag] = value
+	}
+
+	return nil
+}
+
+func (tlv Tlv) EncodeTlv() []byte {
+	data := make([]byte, 0)
+
+	for k, v := range tlv {
+		data = append(data, EncodeTag(k)...)
+		data = append(data, EncodeLength(uint64(len(v)))...)
+		data = append(data, v...)
+	}
+
+	return data
+}
+
 func (t Tlv) Unmarshal(obj interface{}) error {
 	value := reflect.ValueOf(obj)
 
@@ -35,7 +75,15 @@ func (t Tlv) Unmarshal(obj interface{}) error {
 		}
 
 		if opts == "other" {
-			field.Set(reflect.ValueOf(t))
+			if field.IsNil() {
+				field.Set(reflect.ValueOf(t))
+			} else {
+				other := field.Interface().(Tlv)
+
+				for k, v := range t {
+					other[k] = v
+				}
+			}
 		} else {
 			tag, err := strconv.ParseUint(opts, 16, 64)
 
@@ -96,14 +144,6 @@ func (t Tlv) UnmarshalValue(tag int, value interface{}) (bool, error) {
 			if err != nil {
 				return true, err
 			}
-		case *Tlv:
-			result, err := DecodeTlv(data)
-
-			if err != nil {
-				return true, err
-			}
-
-			*v = result
 		case *[]byte:
 			*v = data
 		case *int:
@@ -200,44 +240,19 @@ func (t Tlv) String(tag int) (string, bool, error) {
 	return result, true, nil
 }
 
-func DecodeTlv(data []byte) (Tlv, error) {
-	tlv := make(map[int][]byte)
+func (t Tlv) Bytes(tag int) ([]byte, bool, error) {
+	result := []byte{}
+	found, err := t.UnmarshalValue(tag, &result)
 
-	for i := 0; i < len(data); {
-		tag, tagLength, err := DecodeTag(data[i:])
-
-		if err != nil {
-			return nil, err
-		}
-
-		i += tagLength
-
-		length, lengthLength, err := DecodeLength(data[i:])
-
-		if err != nil {
-			return nil, err
-		}
-
-		i += lengthLength
-
-		value := make([]byte, int(length))
-		copy(value, data[i:i+int(length)])
-		i += int(length)
-
-		tlv[tag] = value
+	if !found || err != nil {
+		return nil, found, err
 	}
 
-	return Tlv(tlv), nil
+	return result, true, nil
 }
 
-func EncodeTlv(tlv Tlv) []byte {
-	data := make([]byte, 0)
+func DecodeTlv(data []byte) (Tlv, error) {
+	tlv := make(Tlv)
 
-	for k, v := range tlv {
-		data = append(data, EncodeTag(k)...)
-		data = append(data, EncodeLength(uint64(len(v)))...)
-		data = append(data, v...)
-	}
-
-	return data
+	return tlv, tlv.DecodeTlv(data)
 }

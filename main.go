@@ -7,19 +7,17 @@ import (
 	"github.com/greenboxal/emv-kernel/emv"
 )
 
-func main() {
+func getCard() (*scard.Card, error) {
 	ctx, err := scard.EstablishContext()
 
 	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		return
+		return nil, err
 	}
 
 	readers, err := ctx.ListReaders()
 
 	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		return
+		return nil, err
 	}
 
 	fmt.Printf("Available readers:\n")
@@ -34,11 +32,14 @@ func main() {
 	}
 
 	if selected == -1 {
-		fmt.Printf("No readers available!\n")
-		return
+		return nil, err
 	}
 
-	rawCard, err := ctx.Connect(readers[selected], scard.ShareExclusive, scard.ProtocolAny)
+	return ctx.Connect(readers[selected], scard.ShareExclusive, scard.ProtocolAny)
+}
+
+func main() {
+	rawCard, err := getCard()
 
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
@@ -46,10 +47,9 @@ func main() {
 	}
 
 	card := emv.NewCard(rawCard)
+	ctx := emv.NewContext(card)
 
-	defer card.Disconnect(scard.ResetCard)
-
-	err = card.Reconnect(scard.ShareExclusive, scard.ProtocolAny, scard.ResetCard)
+	err = ctx.Initialize()
 
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
@@ -57,26 +57,10 @@ func main() {
 	}
 
 	name, _ := hex.DecodeString("A0000000041010")
-	app, found, err := card.ReadApplication(name)
+	err = ctx.SelectApplication(name)
 
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		return
 	}
-
-	if !found {
-		fmt.Printf("Application not found\n")
-		return
-	}
-
-	fmt.Printf("%+v\n", app)
-
-	opts, err := card.GetProcessingOptions()
-
-	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		return
-	}
-
-	fmt.Printf("%+v\n", opts)
 }
