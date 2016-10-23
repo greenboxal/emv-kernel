@@ -18,13 +18,24 @@ This includes implementing the EMV protocol, verifying chip authenticity, perfor
 
 ## Can I use it?
 
-No: Do not expect to use this in production, I can't guarantee that this will pass in any certification process. Without certification- and even with, TBH-, no acquirer will permit a transaction to be processed in its network using this piece of software and insecure hardware. Typical EMV kernels are implemented by POS and Pinpad device manufacturers and always run on secure hardware (as per the EMV Book and PCI DSS/PTS).
+### No
+Do not expect to use this in production, I can't guarantee that this will pass in any certification process.
 
-Yes: This should work for Offline-Pin transactions which don't need to send the PIN enciphered with the acquirer key.
+Without certification (even with TBH), no acquirer will permit a transaction to be processed in its network. Also, typical EMV kernels are implemented by Point of Sale manufacturers and always run on secure hardware (as per the EMV Book and PCI PTS).
+
+### Yes
+This should work for Offline-Pin transactions which don't need to send the PIN enciphered with the acquirer key.
 
 ## How to use it
 
 Just plug any PC/SC smart card reader with any compatible card inside.
+
+## References
+
+* http://www.openscdp.org/scripts/tutorial/emv/index.html
+* https://www.emvco.com/specifications.aspx?id=223
+* https://en.wikipedia.org/wiki/EMV
+* The internet
 
 ## License
 
