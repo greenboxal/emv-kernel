@@ -1,4 +1,4 @@
-package emv
+package tlv
 
 import (
 	"encoding/hex"
@@ -38,7 +38,7 @@ func (tlv Tlv) DecodeTlv(data []byte) error {
 	return nil
 }
 
-func (tlv Tlv) EncodeTlv() []byte {
+func (tlv Tlv) EncodeTlv() ([]byte, error) {
 	data := make([]byte, 0)
 
 	for k, v := range tlv {
@@ -47,7 +47,54 @@ func (tlv Tlv) EncodeTlv() []byte {
 		data = append(data, v...)
 	}
 
-	return data
+	return data, nil
+}
+
+func (t Tlv) Marhsal(obj interface{}) error {
+	value := reflect.ValueOf(obj)
+
+	switch value.Kind() {
+	case reflect.Ptr, reflect.Interface:
+		value = value.Elem()
+	}
+
+	typ := value.Type()
+
+	for i := 0; i < typ.NumField(); i++ {
+		field := value.Field(i)
+		fieldDef := typ.Field(i)
+
+		structTag, ok := fieldDef.Tag.Lookup("tlv")
+		opts := strings.Split(structTag, ",")
+
+		if !ok {
+			continue
+		}
+
+		if optsContains(opts, "other") {
+			if !field.IsNil() {
+				other := field.Interface().(Tlv)
+
+				for k, v := range other {
+					t[k] = v
+				}
+			}
+		} else {
+			tag, err := strconv.ParseUint(opts[0], 16, 64)
+
+			if err != nil {
+				return err
+			}
+
+			err = t.MarshalValueWithOptions(int(tag), field.Interface(), opts)
+
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 func (t Tlv) Unmarshal(obj interface{}) error {
@@ -103,6 +150,91 @@ func (t Tlv) Unmarshal(obj interface{}) error {
 	return nil
 }
 
+func (t Tlv) MarhalValue(tag int, value interface{}) error {
+	return t.MarshalValueWithOptions(tag, value, []string{})
+}
+
+func (t Tlv) MarshalValueWithOptions(tag int, value interface{}, options []string) error {
+	reflectedValue := reflect.ValueOf(value)
+
+	switch reflectedValue.Kind() {
+	case reflect.Ptr, reflect.Interface:
+		reflectedValue = reflectedValue.Elem()
+	}
+
+	typ := reflectedValue.Type()
+
+	encoder, ok := value.(TlvEncoder)
+
+	if ok {
+		data, err := encoder.EncodeTlv()
+
+		if err != nil {
+			return err
+		}
+
+		t[tag] = data
+
+		return nil
+	}
+
+	switch typ.Kind() {
+	case reflect.Struct:
+		tlv := make(Tlv)
+
+		err := tlv.Marhsal(value)
+
+		if err != nil {
+			return err
+		}
+
+		data, err := tlv.EncodeTlv()
+
+		if err != nil {
+			return err
+		}
+
+		t[tag] = data
+	default:
+		switch v := value.(type) {
+		case []byte:
+			t[tag] = v
+		case int:
+			t[tag] = EncodeInteger(int64(v))
+		case int64:
+			t[tag] = EncodeInteger(v)
+		case uint64:
+			t[tag] = EncodeUInt(v)
+		case uint:
+			t[tag] = EncodeUInt(uint64(v))
+		case string:
+			if optsContains(options, "hex") {
+				data, err := hex.DecodeString(v)
+
+				if err != nil {
+					return err
+				}
+
+				t[tag] = data
+			} else {
+				t[tag] = []byte(v)
+			}
+		case bool:
+			i := 0
+
+			if v {
+				i = 1
+			}
+
+			t[tag] = EncodeUInt(uint64(i))
+		default:
+			return fmt.Errorf("go type %s can't be encoded", typ.Name())
+		}
+	}
+
+	return nil
+}
+
 func (t Tlv) UnmarshalValue(tag int, value interface{}) (bool, error) {
 	return t.UnmarshalValueWithOptions(tag, value, []string{})
 }
@@ -127,6 +259,12 @@ func (t Tlv) UnmarshalValueWithOptions(tag int, value interface{}, options []str
 
 	typ := reflectedValue.Type()
 
+	decoder, ok := value.(TlvDecoder)
+
+	if ok {
+		return true, decoder.DecodeTlv(data)
+	}
+
 	switch typ.Kind() {
 	case reflect.Struct:
 		result, err := DecodeTlv(data)
@@ -142,12 +280,6 @@ func (t Tlv) UnmarshalValueWithOptions(tag int, value interface{}, options []str
 		}
 	default:
 		switch v := value.(type) {
-		case TlvDecoder:
-			err := v.DecodeTlv(data)
-
-			if err != nil {
-				return true, err
-			}
 		case *[]byte:
 			*v = data
 		case *int:

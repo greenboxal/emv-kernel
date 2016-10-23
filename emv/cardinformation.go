@@ -1,5 +1,7 @@
 package emv
 
+import "github.com/greenboxal/emv-kernel/tlv"
+
 type CardInformation struct {
 	Pan            string `tlv:"5A,hex"`
 	SequenceNumber int    `tlv:"5F34"`
@@ -7,5 +9,5 @@ type CardInformation struct {
 	HolderName     string `tlv:"5F20"`
 	Track2         string `tlv:"57,hex"`
 
-	Raw Tlv `tlv:"other"`
+	Raw tlv.Tlv `tlv:"other"`
 }

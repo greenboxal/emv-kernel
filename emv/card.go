@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/ebfe/scard"
+	"github.com/greenboxal/emv-kernel/tlv"
 )
 
 type Card struct {
@@ -114,28 +115,6 @@ func (e *Card) ReadRecord(sfi, record int) (*ApduResponse, error) {
 	})
 }
 
-func (e *Card) ReadApplications(contactless bool) (bool, error) {
-	var name []byte
-
-	if contactless {
-		name = []byte("2PAY.SYS.DDF01")
-	} else {
-		name = []byte("1PAY.SYS.DDF01")
-	}
-
-	fci, err := e.Select(name, true)
-
-	if err != nil {
-		return false, nil
-	}
-
-	if fci.SW1 == 0x90 && fci.SW2 == 0x00 {
-		return true, nil
-	} else {
-		return false, nil
-	}
-}
-
 func (e *Card) ReadApplication(name []byte) (*Application, bool, error) {
 	app := &Application{}
 	res, err := e.Select(name, true)
@@ -152,7 +131,7 @@ func (e *Card) ReadApplication(name []byte) (*Application, bool, error) {
 		return nil, false, fmt.Errorf("Error selecting application")
 	}
 
-	body, err := DecodeTlv(res.Body)
+	body, err := tlv.DecodeTlv(res.Body)
 
 	if err != nil {
 		return nil, true, err
@@ -185,7 +164,7 @@ func (e *Card) GetProcessingOptions() (*ProcessingOptions, error) {
 		return nil, err
 	}
 
-	body, err := DecodeTlv(res.Body)
+	body, err := tlv.DecodeTlv(res.Body)
 
 	if err != nil {
 		return nil, err
@@ -204,4 +183,88 @@ func (e *Card) GetProcessingOptions() (*ProcessingOptions, error) {
 	}
 
 	return po, nil
+}
+
+func (e *Card) VerifyPin(pin string) (bool, error) {
+	pinBlock := make([]byte, 8)
+
+	if len(pin) < 4 || len(pin) > 12 {
+		return false, fmt.Errorf("wrong pin size")
+	}
+
+	pinBlock[0] = byte((1 << 5) | len(pin))
+
+	for i := 0; i < 12; i++ {
+		digit := byte(0)
+
+		if i < len(pin) {
+			digit = byte(pin[i] - '0')
+		} else {
+			digit = 0xF
+		}
+
+		offset := i / 2
+		nibble := 1 - (i % 2)
+		shift := nibble * 4
+
+		pinBlock[1+offset] |= digit << uint(shift)
+	}
+
+	pinBlock[7] = 0xFF
+
+	res, err := e.SendApdu(&Apdu{
+		Class:       0x00,
+		Instruction: 0x20,
+		P1:          0x00,
+		P2:          1 << 7,
+		Data:        pinBlock,
+		Expected:    0,
+	})
+
+	if err != nil {
+		return false, err
+	}
+
+	return res.SW1 == 0x90 && res.SW2 == 0x00, nil
+}
+
+func (e *Card) GenerateAC(kind int, dol tlv.Tlv) (*GeneratedAC, error) {
+	data, err := dol.EncodeTlv()
+
+	if err != nil {
+		return nil, err
+	}
+
+	res, err := e.SendApdu(&Apdu{
+		Class:       0x80,
+		Instruction: 0xAE,
+		P1:          byte(kind),
+		P2:          0x00,
+		Data:        data,
+		Expected:    0,
+	})
+
+	if res.SW1 != 0x90 && res.SW2 != 0x00 {
+		return nil, fmt.Errorf("an error ocurred processing command")
+	}
+
+	body, err := tlv.DecodeTlv(res.Body)
+
+	if err != nil {
+		return nil, err
+	}
+
+	ac := &GeneratedAC{}
+
+	found, err := body.UnmarshalValue(0x77, ac)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if !found {
+		return nil, fmt.Errorf("an error ocurred processing command")
+	}
+
+	return ac, nil
 }

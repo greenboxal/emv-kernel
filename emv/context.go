@@ -3,6 +3,7 @@ package emv
 import (
 	"fmt"
 	"github.com/ebfe/scard"
+	"github.com/greenboxal/emv-kernel/tlv"
 )
 
 type Context struct {
@@ -10,6 +11,8 @@ type Context struct {
 	application       *Application
 	processingOptions *ProcessingOptions
 	cardInformation   *CardInformation
+
+	tvr uint64
 
 	sdaData []byte
 }
@@ -56,7 +59,7 @@ func (c *Context) SelectApplication(applicationName []byte) error {
 				return err
 			}
 
-			body, err := DecodeTlv(record.Body)
+			body, err := tlv.DecodeTlv(record.Body)
 
 			if err != nil {
 				return err
@@ -83,7 +86,7 @@ func (c *Context) SelectApplication(applicationName []byte) error {
 				sdaCount--
 			}
 
-			template, err := DecodeTlv(templateBytes)
+			template, err := tlv.DecodeTlv(templateBytes)
 
 			if err != nil {
 				return err
@@ -97,8 +100,67 @@ func (c *Context) SelectApplication(applicationName []byte) error {
 		}
 	}
 
-	fmt.Printf("%+v\n", c.cardInformation)
-	fmt.Printf("%+v\n", c.processingOptions)
-
 	return nil
+}
+
+func (c *Context) Authenticate() (bool, error) {
+	success := true
+
+	if c.processingOptions.ApplicationInterchangeProfile&AipDdaSupported != 0 {
+		ok, err := c.authenticateDda()
+
+		if err != nil {
+			return false, err
+		}
+
+		if !ok {
+			c.tvr |= TvrDdaFailed
+		}
+
+		success = success && ok
+	} else if c.processingOptions.ApplicationInterchangeProfile&AipSdaSupported != 0 {
+		ok, err := c.authenticateSda()
+
+		if err != nil {
+			return false, err
+		}
+
+		if !ok {
+			c.tvr |= TvrSdaFailed
+		}
+
+		success = success && ok
+	} else {
+		c.tvr |= TvrOfflineNotPerformed
+	}
+
+	return true, nil
+}
+
+func (c *Context) VerifyCardholder(pinAsker PinAsker) (bool, error) {
+	pin, err := pinAsker.RetrievePin()
+
+	if err != nil {
+		return false, err
+	}
+
+	ok, err := c.card.VerifyPin(pin)
+
+	if err != nil {
+		return false, err
+	}
+
+	if !ok {
+		c.tvr |= TvrCvmFailed
+	}
+
+	return ok, nil
+}
+
+func (c *Context) authenticateSda() (bool, error) {
+	return false, fmt.Errorf("not implemented")
+}
+
+func (c *Context) authenticateDda() (bool, error) {
+	return false, fmt.Errorf("not implemented")
 }
