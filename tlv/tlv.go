@@ -150,7 +150,7 @@ func (t Tlv) Unmarshal(obj interface{}) error {
 	return nil
 }
 
-func (t Tlv) MarhalValue(tag int, value interface{}) error {
+func (t Tlv) MarshalValue(tag int, value interface{}) error {
 	return t.MarshalValueWithOptions(tag, value, []string{})
 }
 

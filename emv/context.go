@@ -168,19 +168,19 @@ func (c *Context) ProcessTransaction(tx *Transaction) (*TransactionResult, error
 	for tag, length := range c.cardInformation.RiskManagementData {
 		switch tag {
 		case 0x9F02:
-			tlv.MarhalValue(tag, tx.Amount)
+			tlv.MarshalValue(tag, tx.Amount)
 		case 0x9F03:
-			tlv.MarhalValue(tag, tx.AdditionalAmount)
+			tlv.MarshalValue(tag, tx.AdditionalAmount)
 		case 0x9F1A:
-			tlv.MarhalValue(tag, c.config.Terminal.CountryCode)
+			tlv.MarshalValue(tag, c.config.Terminal.CountryCode)
 		case 0x95:
-			tlv.MarhalValue(tag, c.tvr)
+			tlv.MarshalValue(tag, c.tvr)
 		case 0x5F2A:
-			tlv.MarhalValue(tag, c.config.Terminal.CurrencyCode)
+			tlv.MarshalValue(tag, c.config.Terminal.CurrencyCode)
 		case 0x9A:
-			tlv.MarhalValue(tag, tx.Date)
+			tlv.MarshalValue(tag, tx.Date)
 		case 0x9C:
-			tlv.MarhalValue(tag, tx.Type)
+			tlv.MarshalValue(tag, tx.Type)
 		case 0x9F37:
 			number, err := c.generateUnpredictableNumber(length)
 
@@ -188,13 +188,13 @@ func (c *Context) ProcessTransaction(tx *Transaction) (*TransactionResult, error
 				return nil, err
 			}
 
-			tlv.MarhalValue(tag, number)
+			tlv.MarshalValue(tag, number)
 		case 0x9F35:
-			tlv.MarhalValue(tag, c.config.Terminal.Type)
+			tlv.MarshalValue(tag, c.config.Terminal.Type)
 		case 0x9F45:
 			// Do nothing for now. WTF?
 		case 0x9F34:
-			tlv.MarhalValue(tag, c.cvr)
+			tlv.MarshalValue(tag, c.cvr)
 		}
 	}
 
