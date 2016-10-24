@@ -9,5 +9,7 @@ type CardInformation struct {
 	HolderName     string `tlv:"5F20"`
 	Track2         string `tlv:"57,hex"`
 
+	RiskManagementData DataObjectList `tlv:"8C"`
+
 	Raw tlv.Tlv `tlv:"other"`
 }

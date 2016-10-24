@@ -1,24 +1,29 @@
 package emv
 
 import (
+	"crypto/rand"
 	"fmt"
 	"github.com/ebfe/scard"
 	"github.com/greenboxal/emv-kernel/tlv"
 )
 
 type Context struct {
-	card              *Card
+	card   *Card
+	config *ContextConfig
+
 	application       *Application
 	processingOptions *ProcessingOptions
 	cardInformation   *CardInformation
 
 	tvr uint64
+	cvr uint64
 
 	sdaData []byte
 }
 
-func NewContext(card *Card) *Context {
+func NewContext(card *Card, config *ContextConfig) *Context {
 	return &Context{
+		config:          config,
 		card:            card,
 		cardInformation: &CardInformation{},
 		sdaData:         []byte{},
@@ -157,10 +162,61 @@ func (c *Context) VerifyCardholder(pinAsker PinAsker) (bool, error) {
 	return ok, nil
 }
 
+func (c *Context) ProcessTransaction(tx *Transaction) (*TransactionResult, error) {
+	tlv := make(tlv.Tlv)
+
+	for tag, length := range c.cardInformation.RiskManagementData {
+		switch tag {
+		case 0x9F02:
+			tlv.MarhalValue(tag, tx.Amount)
+		case 0x9F03:
+			tlv.MarhalValue(tag, tx.AdditionalAmount)
+		case 0x9F1A:
+			tlv.MarhalValue(tag, c.config.Terminal.CountryCode)
+		case 0x95:
+			tlv.MarhalValue(tag, c.tvr)
+		case 0x5F2A:
+			tlv.MarhalValue(tag, c.config.Terminal.CurrencyCode)
+		case 0x9A:
+			tlv.MarhalValue(tag, tx.Date)
+		case 0x9C:
+			tlv.MarhalValue(tag, tx.Type)
+		case 0x9F37:
+			number, err := c.generateUnpredictableNumber(length)
+
+			if err != nil {
+				return nil, err
+			}
+
+			tlv.MarhalValue(tag, number)
+		case 0x9F35:
+			tlv.MarhalValue(tag, c.config.Terminal.Type)
+		case 0x9F45:
+			// Do nothing for now. WTF?
+		case 0x9F34:
+			tlv.MarhalValue(tag, c.cvr)
+		}
+	}
+
+	return nil, nil
+}
+
 func (c *Context) authenticateSda() (bool, error) {
 	return false, fmt.Errorf("not implemented")
 }
 
 func (c *Context) authenticateDda() (bool, error) {
 	return false, fmt.Errorf("not implemented")
+}
+
+func (c *Context) generateUnpredictableNumber(size int) ([]byte, error) {
+	data := make([]byte, size)
+
+	_, err := rand.Read(data)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return data, nil
 }
