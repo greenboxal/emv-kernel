@@ -20,6 +20,10 @@ func (tlv Tlv) DecodeTlv(data []byte) error {
 
 		i += tagLength
 
+		if tag == 0 {
+			continue
+		}
+
 		length, lengthLength, err := DecodeLength(data[i:])
 
 		if err != nil {
