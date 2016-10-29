@@ -1,6 +1,7 @@
 package emv
 
 import (
+	"bytes"
 	"crypto/rand"
 	"fmt"
 	"github.com/ebfe/scard"
@@ -34,8 +35,114 @@ func (c *Context) Initialize() error {
 	return c.card.Reconnect(scard.ShareExclusive, scard.ProtocolAny, scard.ResetCard)
 }
 
+func (c *Context) ListApplications(contactless bool, hints []ApplicationHint) ([]*ApplicationInformation, error) {
+	var pseFile []byte
+
+	if contactless {
+		pseFile = []byte("2PAY.SYS.DDF01")
+	} else {
+		pseFile = []byte("1PAY.SYS.DDF01")
+	}
+
+	result := make([]*ApplicationInformation, 0)
+	pse, found, err := c.card.SelectApplication(pseFile, true)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if found {
+		record := 1
+
+		for true {
+			res, err := c.card.ReadRecord(pse.Template.Sfi, record)
+
+			if err != nil {
+				return nil, err
+			}
+
+			if len(res.Body) == 0 {
+				break
+			}
+
+			tlv, err := tlv.DecodeTlv(res.Body)
+
+			if err != nil {
+				return nil, err
+			}
+
+			tlv, found, err = tlv.Tlv(0x70)
+
+			if err != nil {
+				return nil, err
+			}
+
+			if !found {
+				return nil, fmt.Errorf("invalid PSE record")
+			}
+
+			info := &ApplicationInformation{}
+			found, err := tlv.UnmarshalValue(0x61, info)
+
+			if err != nil {
+				return nil, err
+			}
+
+			if !found {
+				return nil, fmt.Errorf("invalid PSE record")
+			}
+
+			result = append(result, info)
+			record++
+		}
+	} else {
+		for _, hint := range hints {
+			first := true
+
+			for true {
+				app, found, err := c.card.SelectApplication(hint.Name, first)
+
+				if err != nil {
+					return nil, err
+				}
+
+				if !found {
+					break
+				}
+
+				duplicated := false
+
+				for _, info := range result {
+					if bytes.Compare(info.Name, app.DedicatedFileName) == 0 {
+						duplicated = true
+						break
+					}
+				}
+
+				if !duplicated {
+					result = append(result, &ApplicationInformation{
+						Name:     app.DedicatedFileName,
+						Label:    app.Template.Label,
+						Priority: app.Template.Priority,
+					})
+				}
+
+				if !hint.Partial {
+					break
+				}
+
+				first = false
+			}
+		}
+	}
+
+	return result, nil
+}
+
 func (c *Context) SelectApplication(applicationName []byte) error {
-	app, found, err := c.card.ReadApplication(applicationName)
+	var pdol tlv.Tlv
+
+	app, found, err := c.card.SelectApplication(applicationName, true)
 
 	if err != nil {
 		return err
@@ -45,7 +152,18 @@ func (c *Context) SelectApplication(applicationName []byte) error {
 		return fmt.Errorf("application not found")
 	}
 
-	opts, err := c.card.GetProcessingOptions()
+	if app.Template.ProcessingObjects != nil {
+		pdol, err = c.buildDol(app.Template.ProcessingObjects, nil)
+
+		if err != nil {
+			return err
+		}
+	} else {
+		pdol = make(tlv.Tlv)
+		pdol.MarshalValue(0x83, []byte{})
+	}
+
+	opts, err := c.card.GetProcessingOptions(pdol)
 
 	if err != nil {
 		return err
@@ -105,6 +223,11 @@ func (c *Context) SelectApplication(applicationName []byte) error {
 		}
 	}
 
+	raw, _ := c.cardInformation.Raw.EncodeTlv()
+
+	fmt.Printf("%+v\n", c.application)
+	fmt.Printf("%x\n", raw)
+
 	return nil
 }
 
@@ -162,10 +285,14 @@ func (c *Context) VerifyCardholder(pinAsker PinAsker) (bool, error) {
 	return ok, nil
 }
 
-func (c *Context) ProcessTransaction(tx *Transaction) (*TransactionResult, error) {
+func (c *Context) GenerateCryptogram(tx *Transaction) (*TransactionResult, error) {
+	return nil, nil
+}
+
+func (c *Context) buildDol(dol DataObjectList, tx *Transaction) (tlv.Tlv, error) {
 	tlv := make(tlv.Tlv)
 
-	for tag, length := range c.cardInformation.RiskManagementData {
+	for tag, length := range dol {
 		switch tag {
 		case 0x9F02:
 			tlv.MarshalValue(tag, tx.Amount)
@@ -198,7 +325,7 @@ func (c *Context) ProcessTransaction(tx *Transaction) (*TransactionResult, error
 		}
 	}
 
-	return nil, nil
+	return tlv, nil
 }
 
 func (c *Context) authenticateSda() (bool, error) {

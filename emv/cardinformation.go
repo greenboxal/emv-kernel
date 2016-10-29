@@ -11,5 +11,11 @@ type CardInformation struct {
 
 	RiskManagementData DataObjectList `tlv:"8C"`
 
+	EncryptedIssuerPublicKeyCertificate []byte `tlv:"90"`
+	IssuerPublicKeyRemainder            []byte `tlv:"92"`
+
+	EncryptedIccPublicKeyCertificate []byte `tlv:"9F46"`
+	IccPublicKeyRemainder            []byte `tlv:"9F48"`
+
 	Raw tlv.Tlv `tlv:"other"`
 }

@@ -115,9 +115,9 @@ func (e *Card) ReadRecord(sfi, record int) (*ApduResponse, error) {
 	})
 }
 
-func (e *Card) ReadApplication(name []byte) (*Application, bool, error) {
+func (e *Card) SelectApplication(name []byte, first bool) (*Application, bool, error) {
 	app := &Application{}
-	res, err := e.Select(name, true)
+	res, err := e.Select(name, first)
 
 	if err != nil {
 		return nil, false, err
@@ -150,13 +150,19 @@ func (e *Card) ReadApplication(name []byte) (*Application, bool, error) {
 	return app, true, nil
 }
 
-func (e *Card) GetProcessingOptions() (*ProcessingOptions, error) {
+func (e *Card) GetProcessingOptions(pdol tlv.Tlv) (*ProcessingOptions, error) {
+	pdolData, err := pdol.EncodeTlv()
+
+	if err != nil {
+		return nil, err
+	}
+
 	res, err := e.SendApdu(&Apdu{
 		Class:       0x80,
 		Instruction: 0xA8,
 		P1:          0x00,
 		P2:          0x00,
-		Data:        []byte{0x83, 0x00},
+		Data:        pdolData,
 		Expected:    0,
 	})
 

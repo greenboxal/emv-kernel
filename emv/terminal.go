@@ -2,6 +2,6 @@ package emv
 
 type Terminal struct {
 	Type         int
-	CountryCode  int
+	CountryCode  []byte
 	CurrencyCode int
 }

@@ -1,23 +1,28 @@
 package main
 
 import (
-	"encoding/hex"
 	"fmt"
 	"github.com/ebfe/scard"
 	"github.com/greenboxal/emv-kernel/emv"
 )
 
-type terminalPinAsker struct{}
-
-func (t *terminalPinAsker) RetrievePin() (string, error) {
-	pin := ""
-
-	fmt.Printf("Enter the card PIN\n")
-	fmt.Printf("Please note that this COULD block your card\n")
-	fmt.Printf("PIN: ")
-	fmt.Scanf("%s\n", &pin)
-
-	return pin, nil
+var hints = []emv.ApplicationHint{
+	emv.ApplicationHint{
+		Name:    []byte{0xA0, 0x00, 0x00, 0x00, 0x04, 0x10, 0x10},
+		Partial: false,
+	},
+	emv.ApplicationHint{
+		Name:    []byte{0xA0, 0x00, 0x00, 0x00, 0x03, 0x10, 0x10},
+		Partial: false,
+	},
+	emv.ApplicationHint{
+		Name:    []byte{0xA0, 0x00, 0x00, 0x00, 0x25, 0x01},
+		Partial: true,
+	},
+	emv.ApplicationHint{
+		Name:    []byte{0xA0, 0x00},
+		Partial: true,
+	},
 }
 
 func getCard() (*scard.Card, error) {
@@ -60,34 +65,21 @@ func main() {
 	}
 
 	card := emv.NewCard(rawCard)
-	ctx := emv.NewContext(card)
 
-	err = ctx.Initialize()
+	processor := NewTransactionProcessor(card)
 
-	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		return
-	}
-
-	name, _ := hex.DecodeString("A0000000041010")
-	err = ctx.SelectApplication(name)
+	err = processor.Initialize()
 
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		return
 	}
 
-	_, err = ctx.Authenticate()
+	err = processor.Process()
 
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		return
 	}
 
-	_, err = ctx.VerifyCardholder(&terminalPinAsker{})
-
-	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		return
-	}
 }

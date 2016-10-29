@@ -4,7 +4,13 @@ import "github.com/greenboxal/emv-kernel/tlv"
 
 type DataObjectList map[int]int
 
-func (dol DataObjectList) DecodeTlv(data []byte) error {
+func (dolPointer *DataObjectList) DecodeTlv(data []byte) error {
+	if *dolPointer == nil {
+		*dolPointer = make(DataObjectList)
+	}
+
+	dol := *dolPointer
+
 	for i := 0; i < len(data); {
 		tag, tagLength, err := tlv.DecodeTag(data[i:])
 
