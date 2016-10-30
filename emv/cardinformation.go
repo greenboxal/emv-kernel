@@ -11,11 +11,17 @@ type CardInformation struct {
 
 	RiskManagementData DataObjectList `tlv:"8C"`
 
-	EncryptedIssuerPublicKeyCertificate []byte `tlv:"90"`
-	IssuerPublicKeyRemainder            []byte `tlv:"92"`
+	SchemePublicKeyIndex int `tlv:"8F"`
 
-	EncryptedIccPublicKeyCertificate []byte `tlv:"9F46"`
-	IccPublicKeyRemainder            []byte `tlv:"9F48"`
+	IssuerPublicKeyCertificate []byte `tlv:"90"`
+	IssuerPublicKeyRemainder   []byte `tlv:"92"`
+	IssuerPublicKeyExponent    []byte `tlv:"9F32"`
+
+	IccPublicKeyCertificate []byte `tlv:"9F46"`
+	IccPublicKeyRemainder   []byte `tlv:"9F48"`
+
+	SignedStaticApplicationData []byte  `tlv:"93"`
+	SdaTags                     TagList `tlv:"9F4A"`
 
 	Raw tlv.Tlv `tlv:"other"`
 }

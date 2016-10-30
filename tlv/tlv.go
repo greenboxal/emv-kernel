@@ -10,6 +10,24 @@ import (
 
 type Tlv map[int][]byte
 
+func Pick(tag int, tlvs ...Tlv) (Tlv, bool) {
+	for _, t := range tlvs {
+		_, found := t[tag]
+
+		if found {
+			return t, true
+		}
+	}
+
+	return nil, false
+}
+
+func (tlv Tlv) CopyFrom(other Tlv) {
+	for k, v := range other {
+		tlv[k] = v
+	}
+}
+
 func (tlv Tlv) DecodeTlv(data []byte) error {
 	for i := 0; i < len(data); {
 		tag, tagLength, err := DecodeTag(data[i:])
@@ -54,7 +72,7 @@ func (tlv Tlv) EncodeTlv() ([]byte, error) {
 	return data, nil
 }
 
-func (t Tlv) Marhsal(obj interface{}) error {
+func (t Tlv) Marshal(obj interface{}) error {
 	value := reflect.ValueOf(obj)
 
 	switch value.Kind() {
@@ -79,9 +97,7 @@ func (t Tlv) Marhsal(obj interface{}) error {
 			if !field.IsNil() {
 				other := field.Interface().(Tlv)
 
-				for k, v := range other {
-					t[k] = v
-				}
+				t.CopyFrom(other)
 			}
 		} else {
 			tag, err := strconv.ParseUint(opts[0], 16, 64)
@@ -132,9 +148,7 @@ func (t Tlv) Unmarshal(obj interface{}) error {
 			} else {
 				other := field.Interface().(Tlv)
 
-				for k, v := range t {
-					other[k] = v
-				}
+				other.CopyFrom(t)
 			}
 		} else {
 			tag, err := strconv.ParseUint(opts[0], 16, 64)
@@ -186,7 +200,7 @@ func (t Tlv) MarshalValueWithOptions(tag int, value interface{}, options []strin
 	case reflect.Struct:
 		tlv := make(Tlv)
 
-		err := tlv.Marhsal(value)
+		err := tlv.Marshal(value)
 
 		if err != nil {
 			return err

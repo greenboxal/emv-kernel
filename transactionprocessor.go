@@ -35,7 +35,7 @@ func (t *TransactionProcessor) Initialize() error {
 		Terminal: emv.Terminal{
 			CountryCode: []byte{0x00, 0x76},
 		},
-	})
+	}, &fileCertificateManager{"./certs"})
 
 	err := t.ctx.Initialize()
 
@@ -43,13 +43,22 @@ func (t *TransactionProcessor) Initialize() error {
 		return err
 	}
 
-	app, err := t.selectApplication()
+	info, err := t.selectApplication()
 
 	if err != nil {
 		return err
 	}
 
-	err = t.ctx.SelectApplication(app.Name)
+	_, err = t.ctx.SelectApplication(info.Name)
+
+	if err != nil {
+		return err
+	}
+
+	raw, _ := t.ctx.CardInformation.Raw.EncodeTlv()
+	fmt.Printf("%x\n", raw)
+
+	_, err = t.ctx.Authenticate()
 
 	if err != nil {
 		return err
@@ -88,7 +97,7 @@ func (t *TransactionProcessor) selectApplication() (*emv.ApplicationInformation,
 	}
 
 	if selected == 0 {
-		return nil, nil
+		return nil, fmt.Errorf("operation was cancelled")
 	}
 
 	if selected > len(applications) {

@@ -3,30 +3,35 @@ package emv
 import (
 	"bytes"
 	"crypto/rand"
+	"crypto/sha1"
 	"fmt"
 	"github.com/ebfe/scard"
 	"github.com/greenboxal/emv-kernel/tlv"
+	"math/big"
 )
 
 type Context struct {
 	card   *Card
 	config *ContextConfig
+	cm     CertificateManager
 
-	application       *Application
-	processingOptions *ProcessingOptions
-	cardInformation   *CardInformation
+	Application       *Application
+	ProcessingOptions *ProcessingOptions
+	CardInformation   *CardInformation
 
 	tvr uint64
 	cvr uint64
 
-	sdaData []byte
+	sdaData                []byte
+	dataAuthenticationCode []byte
 }
 
-func NewContext(card *Card, config *ContextConfig) *Context {
+func NewContext(card *Card, config *ContextConfig, cm CertificateManager) *Context {
 	return &Context{
 		config:          config,
 		card:            card,
-		cardInformation: &CardInformation{},
+		cm:              cm,
+		CardInformation: &CardInformation{},
 		sdaData:         []byte{},
 	}
 }
@@ -113,7 +118,7 @@ func (c *Context) ListApplications(contactless bool, hints []ApplicationHint) ([
 				duplicated := false
 
 				for _, info := range result {
-					if bytes.Compare(info.Name, app.DedicatedFileName) == 0 {
+					if bytes.Equal(info.Name, app.DedicatedFileName) {
 						duplicated = true
 						break
 					}
@@ -139,24 +144,24 @@ func (c *Context) ListApplications(contactless bool, hints []ApplicationHint) ([
 	return result, nil
 }
 
-func (c *Context) SelectApplication(applicationName []byte) error {
+func (c *Context) SelectApplication(applicationName []byte) (*Application, error) {
 	var pdol tlv.Tlv
 
 	app, found, err := c.card.SelectApplication(applicationName, true)
 
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if !found {
-		return fmt.Errorf("application not found")
+		return nil, fmt.Errorf("application not found")
 	}
 
 	if app.Template.ProcessingObjects != nil {
 		pdol, err = c.buildDol(app.Template.ProcessingObjects, nil)
 
 		if err != nil {
-			return err
+			return nil, err
 		}
 	} else {
 		pdol = make(tlv.Tlv)
@@ -166,11 +171,11 @@ func (c *Context) SelectApplication(applicationName []byte) error {
 	opts, err := c.card.GetProcessingOptions(pdol)
 
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	c.application = app
-	c.processingOptions = opts
+	c.Application = app
+	c.ProcessingOptions = opts
 
 	for _, app := range opts.ApplicationFileList {
 		sdaCount := app.SdaCount
@@ -179,23 +184,23 @@ func (c *Context) SelectApplication(applicationName []byte) error {
 			record, err := c.card.ReadRecord(app.Sfi, i)
 
 			if err != nil {
-				return err
+				return nil, err
 			}
 
 			body, err := tlv.DecodeTlv(record.Body)
 
 			if err != nil {
-				return err
+				return nil, err
 			}
 
 			templateBytes, found, err := body.Bytes(0x70)
 
 			if err != nil {
-				return err
+				return nil, err
 			}
 
 			if !found {
-				return fmt.Errorf("malformed application file")
+				return nil, fmt.Errorf("malformed application file")
 			}
 
 			// Build SDA data
@@ -212,29 +217,24 @@ func (c *Context) SelectApplication(applicationName []byte) error {
 			template, err := tlv.DecodeTlv(templateBytes)
 
 			if err != nil {
-				return err
+				return nil, err
 			}
 
-			err = template.Unmarshal(c.cardInformation)
+			err = template.Unmarshal(c.CardInformation)
 
 			if err != nil {
-				return err
+				return nil, err
 			}
 		}
 	}
 
-	raw, _ := c.cardInformation.Raw.EncodeTlv()
-
-	fmt.Printf("%+v\n", c.application)
-	fmt.Printf("%x\n", raw)
-
-	return nil
+	return app, nil
 }
 
 func (c *Context) Authenticate() (bool, error) {
 	success := true
 
-	if c.processingOptions.ApplicationInterchangeProfile&AipDdaSupported != 0 {
+	if c.ProcessingOptions.ApplicationInterchangeProfile&AipDdaSupported != 0 {
 		ok, err := c.authenticateDda()
 
 		if err != nil {
@@ -246,7 +246,7 @@ func (c *Context) Authenticate() (bool, error) {
 		}
 
 		success = success && ok
-	} else if c.processingOptions.ApplicationInterchangeProfile&AipSdaSupported != 0 {
+	} else if c.ProcessingOptions.ApplicationInterchangeProfile&AipSdaSupported != 0 {
 		ok, err := c.authenticateSda()
 
 		if err != nil {
@@ -329,11 +329,131 @@ func (c *Context) buildDol(dol DataObjectList, tx *Transaction) (tlv.Tlv, error)
 }
 
 func (c *Context) authenticateSda() (bool, error) {
-	return false, fmt.Errorf("not implemented")
+	pub, err := c.retrieveIssuerPublicKey()
+
+	if err != nil {
+		return false, err
+	}
+
+	sad, err := pub.Decrypt(c.CardInformation.SignedStaticApplicationData)
+
+	if err != nil {
+		return false, err
+	}
+
+	if sad[len(sad)-1] != 0xBC {
+		return false, fmt.Errorf("invalid static application data")
+	}
+
+	if sad[0] != 0x6A {
+		return false, fmt.Errorf("invalid static application data")
+	}
+
+	if sad[1] != 0x03 {
+		return false, fmt.Errorf("invalid static application data")
+	}
+
+	sdaTags, err := c.buildSdaTags()
+
+	if err != nil {
+		return false, err
+	}
+
+	data := sad[1:][:len(sad)-22]
+	data = append(data, c.sdaData...)
+	data = append(data, sdaTags...)
+
+	actualHash := sha1.Sum(data)
+	expectedHash := sad[len(sad)-21:][:20]
+
+	if !bytes.Equal(expectedHash, actualHash[:]) {
+		fmt.Printf("%x\n%x\n", actualHash, expectedHash)
+		return false, fmt.Errorf("sda hash doesn't match")
+	}
+
+	c.dataAuthenticationCode = sad[3:][:2]
+
+	return true, nil
 }
 
 func (c *Context) authenticateDda() (bool, error) {
 	return false, fmt.Errorf("not implemented")
+}
+
+func (c *Context) buildSdaTags() ([]byte, error) {
+	result := make([]byte, 0)
+
+	for _, tag := range c.CardInformation.SdaTags {
+		t, found := tlv.Pick(tag, c.CardInformation.Raw, c.ProcessingOptions.Raw)
+
+		if !found {
+			return nil, fmt.Errorf("missing SDA tag")
+		}
+
+		value, _, err := t.Bytes(tag)
+
+		if err != nil {
+			return nil, err
+		}
+
+		result = append(result, value...)
+	}
+
+	return result, nil
+}
+
+func (c *Context) retrieveIssuerPublicKey() (*PublicKey, error) {
+	rid := c.Application.DedicatedFileName[0:5]
+	index := c.CardInformation.SchemePublicKeyIndex
+
+	pub, err := c.cm.GetSchemePublicKey(rid, index)
+
+	if err != nil {
+		return nil, err
+	}
+
+	cert, err := pub.Decrypt(c.CardInformation.IssuerPublicKeyCertificate)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if cert[0] != 0x6A {
+		return nil, fmt.Errorf("invalid issuer public key")
+	}
+
+	if cert[1] != 0x02 {
+		return nil, fmt.Errorf("invalid issuer public key")
+	}
+
+	if cert[len(cert)-1] != 0xBC {
+		return nil, fmt.Errorf("invalid issuer public key")
+	}
+
+	schemeModulus := pub.Modulus()
+
+	keycheck := cert[1:][:14+len(schemeModulus)-36]
+	keycheck = append(keycheck, c.CardInformation.IssuerPublicKeyRemainder...)
+	keycheck = append(keycheck, c.CardInformation.IssuerPublicKeyExponent...)
+
+	expectedKeycheckHash := cert[15+len(schemeModulus)-36:][:20]
+	actualKeycheckHash := sha1.Sum(keycheck)
+
+	if !bytes.Equal(expectedKeycheckHash, actualKeycheckHash[:]) {
+		fmt.Printf("%x\n%x\n", expectedKeycheckHash, actualKeycheckHash)
+		return nil, fmt.Errorf("hash doesn't match")
+	}
+
+	modulus := cert[15 : 15+len(schemeModulus)-36]
+	modulus = append(modulus, c.CardInformation.IssuerPublicKeyRemainder...)
+
+	e := big.NewInt(0)
+	e.SetBytes(c.CardInformation.IssuerPublicKeyExponent)
+
+	m := big.NewInt(0)
+	m.SetBytes(modulus)
+
+	return NewPublicKey(e, m), nil
 }
 
 func (c *Context) generateUnpredictableNumber(size int) ([]byte, error) {
