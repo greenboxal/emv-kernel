@@ -290,24 +290,24 @@ func (c *Context) GenerateCryptogram(tx *Transaction) (*TransactionResult, error
 }
 
 func (c *Context) buildDol(dol DataObjectList, tx *Transaction) (tlv.Tlv, error) {
-	tlv := make(tlv.Tlv)
+	t := make(tlv.Tlv)
 
 	for tag, length := range dol {
 		switch tag {
 		case 0x9F02:
-			tlv.MarshalValue(tag, tx.Amount)
+			t.MarshalValue(tag, tx.Amount)
 		case 0x9F03:
-			tlv.MarshalValue(tag, tx.AdditionalAmount)
+			t.MarshalValue(tag, tx.AdditionalAmount)
 		case 0x9F1A:
-			tlv.MarshalValue(tag, c.config.Terminal.CountryCode)
+			t.MarshalValue(tag, c.config.Terminal.CountryCode)
 		case 0x95:
-			tlv.MarshalValue(tag, c.tvr)
+			t.MarshalValue(tag, c.tvr)
 		case 0x5F2A:
-			tlv.MarshalValue(tag, c.config.Terminal.CurrencyCode)
+			t.MarshalValue(tag, c.config.Terminal.CurrencyCode)
 		case 0x9A:
-			tlv.MarshalValue(tag, tx.Date)
+			t.MarshalValue(tag, tx.Date)
 		case 0x9C:
-			tlv.MarshalValue(tag, tx.Type)
+			t.MarshalValue(tag, tx.Type)
 		case 0x9F37:
 			number, err := c.generateUnpredictableNumber(length)
 
@@ -315,17 +315,25 @@ func (c *Context) buildDol(dol DataObjectList, tx *Transaction) (tlv.Tlv, error)
 				return nil, err
 			}
 
-			tlv.MarshalValue(tag, number)
+			t.MarshalValue(tag, number)
 		case 0x9F35:
-			tlv.MarshalValue(tag, c.config.Terminal.Type)
+			t.MarshalValue(tag, c.config.Terminal.Type)
 		case 0x9F45:
-			// Do nothing for now. WTF?
+			t.MarshalValue(tag, c.dataAuthenticationCode)
 		case 0x9F34:
-			tlv.MarshalValue(tag, c.cvr)
+			t.MarshalValue(tag, c.cvr)
+		default:
+			t, found := tlv.Pick(tag, c.CardInformation.Raw, c.ProcessingOptions.Raw)
+
+			if found {
+				value, _, _ := t.Bytes(tag)
+
+				t.MarshalValue(tag, value)
+			}
 		}
 	}
 
-	return tlv, nil
+	return t, nil
 }
 
 func (c *Context) authenticateSda() (bool, error) {
