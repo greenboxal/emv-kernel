@@ -295,19 +295,19 @@ func (c *Context) buildDol(dol DataObjectList, tx *Transaction) (tlv.Tlv, error)
 	for tag, length := range dol {
 		switch tag {
 		case 0x9F02:
-			t.MarshalValue(tag, tx.Amount)
+			t.MarshalValueWithLength(tag, length, tx.Amount)
 		case 0x9F03:
-			t.MarshalValue(tag, tx.AdditionalAmount)
+			t.MarshalValueWithLength(tag, length, tx.AdditionalAmount)
 		case 0x9F1A:
-			t.MarshalValue(tag, c.config.Terminal.CountryCode)
+			t.MarshalValueWithLength(tag, length, c.config.Terminal.CountryCode)
 		case 0x95:
-			t.MarshalValue(tag, c.tvr)
+			t.MarshalValueWithLength(tag, length, c.tvr)
 		case 0x5F2A:
-			t.MarshalValue(tag, c.config.Terminal.CurrencyCode)
+			t.MarshalValueWithLength(tag, length, c.config.Terminal.CurrencyCode)
 		case 0x9A:
-			t.MarshalValue(tag, tx.Date)
+			t.MarshalValueWithLength(tag, length, tx.Date)
 		case 0x9C:
-			t.MarshalValue(tag, tx.Type)
+			t.MarshalValueWithLength(tag, length, tx.Type)
 		case 0x9F37:
 			number, err := c.generateUnpredictableNumber(length)
 
@@ -315,20 +315,34 @@ func (c *Context) buildDol(dol DataObjectList, tx *Transaction) (tlv.Tlv, error)
 				return nil, err
 			}
 
-			t.MarshalValue(tag, number)
+			t.MarshalValueWithLength(tag, length, number)
 		case 0x9F35:
-			t.MarshalValue(tag, c.config.Terminal.Type)
+			t.MarshalValueWithLength(tag, length, c.config.Terminal.Type)
 		case 0x9F45:
-			t.MarshalValue(tag, c.dataAuthenticationCode)
+			t.MarshalValueWithLength(tag, length, c.dataAuthenticationCode)
 		case 0x9F34:
-			t.MarshalValue(tag, c.cvr)
+			t.MarshalValueWithLength(tag, length, c.cvr)
+		case 0x9F33:
+			t.MarshalValueWithLength(tag, length, c.config.Terminal.Capabilities)
+		case 0x9F40:
+			t.MarshalValueWithLength(tag, length, c.config.Terminal.AdditionalCapabilities)
 		default:
-			t, found := tlv.Pick(tag, c.CardInformation.Raw, c.ProcessingOptions.Raw)
+			tlvs := make([]tlv.Tlv, 0)
+
+			if c.CardInformation != nil {
+				tlvs = append(tlvs, c.CardInformation.Raw)
+			}
+
+			if c.ProcessingOptions != nil {
+				tlvs = append(tlvs, c.ProcessingOptions.Raw)
+			}
+
+			t, found := tlv.Pick(tag, tlvs...)
 
 			if found {
 				value, _, _ := t.Bytes(tag)
 
-				t.MarshalValue(tag, value)
+				t.MarshalValueWithLength(tag, length, value)
 			}
 		}
 	}

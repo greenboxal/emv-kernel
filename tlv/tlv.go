@@ -172,7 +172,15 @@ func (t Tlv) MarshalValue(tag int, value interface{}) error {
 	return t.MarshalValueWithOptions(tag, value, []string{})
 }
 
+func (t Tlv) MarshalValueWithLength(tag, length int, value interface{}) error {
+	return t.MarshalValueWithLengthAndOptions(tag, -1, value, []string{})
+}
+
 func (t Tlv) MarshalValueWithOptions(tag int, value interface{}, options []string) error {
+	return t.MarshalValueWithLengthAndOptions(tag, -1, value, options)
+}
+
+func (t Tlv) MarshalValueWithLengthAndOptions(tag, length int, value interface{}, options []string) error {
 	reflectedValue := reflect.ValueOf(value)
 
 	switch reflectedValue.Kind() {
@@ -249,6 +257,12 @@ func (t Tlv) MarshalValueWithOptions(tag int, value interface{}, options []strin
 			return fmt.Errorf("go type %s can't be encoded", typ.Name())
 		}
 	}
+
+	// if length != -1 && len(t[tag]) < length {
+	// 	missing := length - len(t[tag])
+	//
+	// 	t[tag] = append(make([]byte, missing), t[tag]...)
+	// }
 
 	return nil
 }

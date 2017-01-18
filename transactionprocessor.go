@@ -33,7 +33,10 @@ func NewTransactionProcessor(card *emv.Card) *TransactionProcessor {
 func (t *TransactionProcessor) Initialize() error {
 	t.ctx = emv.NewContext(t.card, &emv.ContextConfig{
 		Terminal: emv.Terminal{
-			CountryCode: []byte{0x00, 0x76},
+			Type:                   0x22,
+			CountryCode:            []byte{0x00, 0x76},
+			Capabilities:           0xE0F0E8,
+			AdditionalCapabilities: 0xF000F0A001,
 		},
 	}, &fileCertificateManager{"./certs"})
 
