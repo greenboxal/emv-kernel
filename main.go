@@ -45,7 +45,7 @@ func getCard() (*scard.Card, error) {
 
 	selected := -1
 
-	if len(readers) == 1 {
+	if len(readers) >= 1 {
 		selected = 0
 	}
 
