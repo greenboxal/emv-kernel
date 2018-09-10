@@ -185,8 +185,27 @@ func (e *Card) GetProcessingOptions(pdol tlv.Tlv) (*ProcessingOptions, error) {
 	}
 
 	if !found {
-		return nil, fmt.Errorf("Invalid message")
+		raw, found, err := body.Bytes(0x80)
+
+		if err != nil {
+			return nil, err
+		}
+
+		if !found {
+			return nil, fmt.Errorf("Invalid message")
+		}
+
+		aip, err := tlv.DecodeInteger(raw[0:2])
+
+		if err != nil {
+			return nil, err
+		}
+
+		po.ApplicationInterchangeProfile = int(aip)
+		po.ApplicationFileList.DecodeTlv(raw[2:])
 	}
+
+	fmt.Printf("%#+v\n", po)
 
 	return po, nil
 }
