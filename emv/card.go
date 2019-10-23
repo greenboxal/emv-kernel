@@ -15,7 +15,7 @@ func NewCard(card *scard.Card) *Card {
 	return &Card{card}
 }
 
-func (e *Card) SendRawApdu(apdu *Apdu) (*ApduResponse, error) {
+func (c *Card) SendRawApdu(apdu *Apdu) (*ApduResponse, error) {
 	dataLength := byte(0)
 	fixed := 5
 
@@ -41,7 +41,7 @@ func (e *Card) SendRawApdu(apdu *Apdu) (*ApduResponse, error) {
 
 	fmt.Printf("SENT %s\n", hex.EncodeToString(req))
 
-	res, err := e.Transmit(req)
+	res, err := c.Transmit(req)
 
 	if err != nil {
 		return nil, err
@@ -56,15 +56,15 @@ func (e *Card) SendRawApdu(apdu *Apdu) (*ApduResponse, error) {
 	}, nil
 }
 
-func (e *Card) SendApdu(apdu *Apdu) (*ApduResponse, error) {
-	res, err := e.SendRawApdu(apdu)
+func (c *Card) SendApdu(apdu *Apdu) (*ApduResponse, error) {
+	res, err := c.SendRawApdu(apdu)
 
 	if err != nil {
 		return nil, err
 	}
 
 	if res.SW1 == 0x61 {
-		return e.SendRawApdu(&Apdu{
+		return c.SendRawApdu(&Apdu{
 			Class:       0x00,
 			Instruction: 0xC0,
 			P1:          0x00,
@@ -72,7 +72,7 @@ func (e *Card) SendApdu(apdu *Apdu) (*ApduResponse, error) {
 			Expected:    res.SW2,
 		})
 	} else if res.SW1 == 0x6C {
-		return e.SendRawApdu(&Apdu{
+		return c.SendRawApdu(&Apdu{
 			Class:       apdu.Class,
 			Instruction: apdu.Instruction,
 			P1:          apdu.P1,
@@ -85,7 +85,7 @@ func (e *Card) SendApdu(apdu *Apdu) (*ApduResponse, error) {
 	return res, nil
 }
 
-func (e *Card) Select(name []byte, first bool) (*ApduResponse, error) {
+func (c *Card) Select(name []byte, first bool) (*ApduResponse, error) {
 	var p2 byte
 
 	if first {
@@ -94,7 +94,7 @@ func (e *Card) Select(name []byte, first bool) (*ApduResponse, error) {
 		p2 = 2
 	}
 
-	return e.SendApdu(&Apdu{
+	return c.SendApdu(&Apdu{
 		Class:       0x00,
 		Instruction: 0xA4,
 		P1:          0x04,
@@ -104,8 +104,8 @@ func (e *Card) Select(name []byte, first bool) (*ApduResponse, error) {
 	})
 }
 
-func (e *Card) ReadRecord(sfi, record int) (*ApduResponse, error) {
-	return e.SendApdu(&Apdu{
+func (c *Card) ReadRecord(sfi, record int) (*ApduResponse, error) {
+	return c.SendApdu(&Apdu{
 		Class:       0x00,
 		Instruction: 0xB2,
 		P1:          byte(record),
@@ -115,9 +115,9 @@ func (e *Card) ReadRecord(sfi, record int) (*ApduResponse, error) {
 	})
 }
 
-func (e *Card) SelectApplication(name []byte, first bool) (*Application, bool, error) {
+func (c *Card) SelectApplication(name []byte, first bool) (*Application, bool, error) {
 	app := &Application{}
-	res, err := e.Select(name, first)
+	res, err := c.Select(name, first)
 
 	if err != nil {
 		return nil, false, err
@@ -150,14 +150,14 @@ func (e *Card) SelectApplication(name []byte, first bool) (*Application, bool, e
 	return app, true, nil
 }
 
-func (e *Card) GetProcessingOptions(pdol tlv.Tlv) (*ProcessingOptions, error) {
+func (c *Card) GetProcessingOptions(pdol tlv.Tlv) (*ProcessingOptions, error) {
 	pdolData, err := pdol.EncodeTlv()
 
 	if err != nil {
 		return nil, err
 	}
 
-	res, err := e.SendApdu(&Apdu{
+	res, err := c.SendApdu(&Apdu{
 		Class:       0x80,
 		Instruction: 0xA8,
 		P1:          0x00,
@@ -210,7 +210,7 @@ func (e *Card) GetProcessingOptions(pdol tlv.Tlv) (*ProcessingOptions, error) {
 	return po, nil
 }
 
-func (e *Card) VerifyPin(pin string) (bool, error) {
+func (c *Card) VerifyPin(pin string) (bool, error) {
 	pinBlock := make([]byte, 8)
 
 	if len(pin) < 4 || len(pin) > 12 {
@@ -237,7 +237,7 @@ func (e *Card) VerifyPin(pin string) (bool, error) {
 
 	pinBlock[7] = 0xFF
 
-	res, err := e.SendApdu(&Apdu{
+	res, err := c.SendApdu(&Apdu{
 		Class:       0x00,
 		Instruction: 0x20,
 		P1:          0x00,
@@ -253,14 +253,14 @@ func (e *Card) VerifyPin(pin string) (bool, error) {
 	return res.SW1 == 0x90 && res.SW2 == 0x00, nil
 }
 
-func (e *Card) GenerateAC(kind int, dol tlv.Tlv) (*GeneratedAC, error) {
+func (c *Card) GenerateAC(kind int, dol tlv.Tlv) (*GeneratedAC, error) {
 	data, err := dol.EncodeTlv()
 
 	if err != nil {
 		return nil, err
 	}
 
-	res, err := e.SendApdu(&Apdu{
+	res, err := c.SendApdu(&Apdu{
 		Class:       0x80,
 		Instruction: 0xAE,
 		P1:          byte(kind),
