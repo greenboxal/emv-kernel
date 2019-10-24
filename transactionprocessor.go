@@ -67,6 +67,25 @@ func (t *TransactionProcessor) Initialize() error {
 	return nil
 }
 
+var hints = []emv.ApplicationHint{
+	emv.ApplicationHint{
+		Name:    []byte{0xA0, 0x00, 0x00, 0x00, 0x04, 0x10, 0x10},
+		Partial: false,
+	},
+	emv.ApplicationHint{
+		Name:    []byte{0xA0, 0x00, 0x00, 0x00, 0x03, 0x10, 0x10},
+		Partial: false,
+	},
+	emv.ApplicationHint{
+		Name:    []byte{0xA0, 0x00, 0x00, 0x00, 0x25, 0x01},
+		Partial: true,
+	},
+	emv.ApplicationHint{
+		Name:    []byte{0xA0, 0x00},
+		Partial: true,
+	},
+}
+
 func (t *TransactionProcessor) selectApplication() (*emv.ApplicationInformation, error) {
 	applications, err := t.ctx.ListApplications(false, hints)
 
